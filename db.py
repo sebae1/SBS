@@ -20,9 +20,6 @@ class TableAccountBook(BaseTable):
         VAT = Attribute('value_added_tax', AttrType.INTEGER, True, checks=('>=0',), description='부가세')
         REMARK = Attribute('remark', AttrType.TEXT, description='비고')
         DEPOSIT = Attribute('deposit', AttrType.INTEGER, True, default=0, checks=('>=0', '<=1'), description='입금여부')
-        QUO = Attribute('quotation', AttrType.TEXT, description='견적서 파일 경로')
-        TRANSACTION = Attribute('transac', AttrType.TEXT, description='거래명세서 파일 경로')
-        INVOICE = Attribute('invoice', AttrType.TEXT, description='적격증빙 파일 경로')
     
     NAME = 'account_book'
     FKS:tuple[ForeignKey,] = ()
