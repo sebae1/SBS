@@ -126,7 +126,12 @@ class _ReadOnlyMeta(type):
     def unlock_set_attr(cls):
         cls._locked = False
 
-class BaseTable(metaclass=_ReadOnlyMeta):
+class _BaseTableMeta(metaclass=_ReadOnlyMeta):
+
+    def __str__(cls):
+        return cls.NAME
+
+class BaseTable(metaclass=_BaseTableMeta):
     
     class Attributes:
         pass
@@ -363,4 +368,8 @@ class BaseDB(metaclass=_ReadOnlyMeta):
             query = table.get_creation_query()
             cur.execute(query)
         con.commit()
-        con.close()
+        cls.unlock_set_attr()
+        cls.CON = con
+        cls.CUR = cur
+        cls.lock_set_attr()
+    
