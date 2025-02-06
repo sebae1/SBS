@@ -126,7 +126,7 @@ class _ReadOnlyMeta(type):
     def unlock_set_attr(cls):
         cls._locked = False
 
-class _BaseTableMeta(metaclass=_ReadOnlyMeta):
+class _BaseTableMeta(type, metaclass=_ReadOnlyMeta):
 
     def __str__(cls):
         return cls.NAME
