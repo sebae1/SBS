@@ -1,4 +1,5 @@
 import datetime
+import traceback
 import wx
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,6 +10,7 @@ from widget import DatePicker, FileSelector, Deposit
 from filemanager import FileManager
 from ossl import DialogOSSL
 from info import DialogHelp
+from excel import Record, save_records_as_excel
 
 class DialogTransaction(wx.Dialog):
 
@@ -539,10 +541,12 @@ class PanelAccountBook(wx.Panel):
             (bt_search, (0, 1), (3, 1), wx.EXPAND)
         ))
 
+        bt_save = wx.Button(self, label='엑셀로 저장')
         bt_add  = wx.Button(self, label='작성')
         bt_del  = wx.Button(self, label='삭제')
         sz_bt = wx.BoxSizer(wx.HORIZONTAL)
         sz_bt.AddMany((
+            (bt_save, 0, wx.ALIGN_CENTER_VERTICAL), ((5, -1), 0),
             (bt_add , 0, wx.ALIGN_CENTER_VERTICAL), ((5, -1), 0),
             (bt_del , 0, wx.ALIGN_CENTER_VERTICAL)
         ))
@@ -575,6 +579,7 @@ class PanelAccountBook(wx.Panel):
         sz.Add(sz_vert, 1, wx.EXPAND|wx.ALL, 10)
         self.SetSizer(sz)
 
+        self.__bt_save = bt_save
         self.__bt_add  = bt_add 
         self.__bt_del  = bt_del 
         self.__lc = lc
@@ -589,6 +594,7 @@ class PanelAccountBook(wx.Panel):
         self.__bt_search = bt_search
     
     def __bind_events(self):
+        self.__bt_save.Bind(wx.EVT_BUTTON, self.__on_save)
         self.__bt_add.Bind(wx.EVT_BUTTON, self.__on_add)
         self.__bt_del.Bind(wx.EVT_BUTTON, self.__on_del)
         self.__lc.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.__on_activate_item)
@@ -597,6 +603,44 @@ class PanelAccountBook(wx.Panel):
         self.__bt_year .Bind(wx.EVT_BUTTON, self.__on_year )
         self.__bt_search.Bind(wx.EVT_BUTTON, self.__on_search)
     
+    def __on_save(self, event):
+        lc = self.__lc
+        n = lc.GetItemCount()
+        if not n:
+            wx.MessageBox('저장할 내용이 없습니다.\n다른 조건으로 검색 후에 다시 시도하세요.', '안내')
+            return
+        dlg = wx.FileDialog(self, '저장 경로를 선택하세요.', style=wx.FD_SAVE|wx.FD_OVERWRITE_PROMPT, wildcard='엑셀 파일 (*.xlsx)|*.xlsx')
+        res = dlg.ShowModal()
+        filepath = dlg.GetPath()
+        dlg.Destroy()
+        if res != wx.ID_OK:
+            return
+        dlgp = wx.ProgressDialog('안내', '엑셀 파일을 생성 중입니다.')
+        dlgp.Pulse()
+        try:
+            records = []
+            for i in range(n):
+                records.append(
+                    Record(
+                        lc.GetItemText(i, 1),
+                        lc.GetItemText(i, 2),
+                        lc.GetItemText(i, 3),
+                        lc.GetItemText(i, 4),
+                        lc.GetItemText(i, 5),
+                        lc.GetItemText(i, 6),
+                        lc.GetItemText(i, 7)
+                    )
+                )
+            save_records_as_excel(filepath, records)
+        except:
+            msg = f'엑셀 파일 생성 중 예기치 않은 오류가 발생했습니다.\n\n{traceback.format_exc()}'
+        else:
+            msg = '엑셀 파일을 생성했습니다.'
+        finally:
+            dlgp.Destroy()
+            wx.Yield()
+            wx.MessageBox(msg, '안내', parent=self)
+
     def __on_add(self, event):
         dlg = DialogTransaction(self, None)
         res = dlg.ShowModal()
