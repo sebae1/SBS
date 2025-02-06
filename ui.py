@@ -155,6 +155,79 @@ class DialogTransaction(wx.Dialog):
     def GetTransaction(self) -> Transaction:
         return self.__tr
 
+class DialogDeleteOlds(wx.Dialog):
+
+    def __init__(self, parent):
+        wx.Dialog.__init__(self, parent, title='오래된 데이터 삭제')
+        self.__set_layout()
+        self.__bind_events()
+    
+    def __set_layout(self):
+        today = datetime.date.today()
+        date = datetime.date(today.year-3, 1, 1)
+        dp = DatePicker(self, date)
+        st = wx.StaticText(self, label='위 날짜 이전의 데이터들을 모두 삭제합니다.')
+        bt_confirm = wx.Button(self, label='삭제')
+        bt_cancel = wx.Button(self, label='취소')
+        sz_horz = wx.BoxSizer(wx.HORIZONTAL)
+        sz_horz.AddMany((
+            (bt_confirm, 1, wx.ALIGN_CENTER_VERTICAL), ((5, -1), 0),
+            (bt_cancel, 1, wx.ALIGN_CENTER_VERTICAL)
+        ))
+
+        sz_vert = wx.BoxSizer(wx.VERTICAL)
+        sz_vert.AddMany((
+            (dp, 0, wx.ALIGN_CENTER_HORIZONTAL), ((-1, 10), 0),
+            (st, 0, wx.ALIGN_CENTER_HORIZONTAL), ((-1, 10), 0),
+            (wx.StaticLine(self), 0, wx.EXPAND), ((-1, 10), 0),
+            (sz_horz, 0, wx.EXPAND)
+        ))
+        sz = wx.BoxSizer(wx.HORIZONTAL)
+        sz.Add(sz_vert, 1, wx.EXPAND|wx.ALL, 20)
+        self.SetSizerAndFit(sz)
+        self.CenterOnParent()
+
+        self.__dp = dp
+        self.__bt_confirm = bt_confirm
+        self.__bt_cancel = bt_cancel
+
+    def __bind_events(self):
+        self.__bt_confirm.Bind(wx.EVT_BUTTON, self.__on_confirm)
+        self.__bt_cancel.Bind(wx.EVT_BUTTON, self.__on_cancel)
+    
+    def __on_confirm(self, event):
+        today = datetime.date.today()
+        if self.__dp.date >= today:
+            wx.MessageBox('설정한 날짜가 오늘보다 미래입니다.', '안내', parent=self)
+            return
+        days = (today-self.__dp.date).days
+        year = days//365
+        days = days%365
+        text = ''
+        if year:
+            text = f'{year}년'
+        if days:
+            text = f'{text} {days}일'
+        dlg = wx.TextEntryDialog(
+            self, 
+            f'{text}보다 오래된 데이터를 삭제합니다.\n' \
+            '삭제한 데이터는 복구할 수 없습니다.\n' \
+            '정말로 삭제하려면 "삭제"를 입력하세요.',
+            '경고'
+        )
+        res = dlg.ShowModal()
+        inp = dlg.GetValue()
+        dlg.Destroy()
+        if res == wx.ID_OK \
+            and inp == '삭제':
+            self.EndModal(wx.ID_OK)
+    
+    def __on_cancel(self, event):
+        self.EndModal(wx.ID_CANCEL)
+
+    def GetDate(self) -> datetime.date:
+        return self.__dp.date
+
 class PanelDashboard(wx.Panel):
 
     COLOR_INCOME = '#00B050'
@@ -165,7 +238,7 @@ class PanelDashboard(wx.Panel):
         wx.Panel.__init__(self, parent)
         self.__set_layout()
         self.__bind_events()
-        self.__on_something_changed(None)
+        self.search()
 
     def __set_layout(self):
         # ///////////////////////////////////////////////////////////
@@ -306,6 +379,29 @@ class PanelDashboard(wx.Panel):
     def __on_something_changed(self, event):
         dlgp = wx.ProgressDialog('안내', '데이터를 수집 중입니다.')
         dlgp.Pulse()
+        self.search()
+        dlgp.Destroy()
+        wx.CallAfter(wx.GetTopLevelParent(self).Raise)
+
+    def __on_hover_canvas(self, event):
+        if self.__annotation is None:
+            return
+        vis = self.__annotation.get_visible()
+        if event.inaxes == self.__ax:
+            for bar in self.__bars:
+                contains, _ = bar.contains(event)
+                if contains:
+                    value = bar.get_height()
+                    self.__annotation.xy = (bar.get_x() + bar.get_width()/2, value)
+                    self.__annotation.set_text(f'{value:,} 원')
+                    self.__annotation.set_visible(True)
+                    self.__cv.draw_idle()
+                    return
+        if vis:
+            self.__annotation.set_visible(False)
+            self.__cv.draw_idle()
+
+    def search(self):
         self.__sc_every_year.Enable(self.__rb_every_year.GetValue())
         if self.__rb_recent_year.GetValue():
             today = datetime.date.today()
@@ -391,25 +487,6 @@ class PanelDashboard(wx.Panel):
         self.__ax.legend(loc='lower left', ncols=3, bbox_to_anchor=(0, 1))
         self.__fig.tight_layout()
         self.__cv.draw()
-        dlgp.Destroy()
-
-    def __on_hover_canvas(self, event):
-        if self.__annotation is None:
-            return
-        vis = self.__annotation.get_visible()
-        if event.inaxes == self.__ax:
-            for bar in self.__bars:
-                contains, _ = bar.contains(event)
-                if contains:
-                    value = bar.get_height()
-                    self.__annotation.xy = (bar.get_x() + bar.get_width()/2, value)
-                    self.__annotation.set_text(f'{value:,} 원')
-                    self.__annotation.set_visible(True)
-                    self.__cv.draw_idle()
-                    return
-        if vis:
-            self.__annotation.set_visible(False)
-            self.__cv.draw_idle()
 
 class PanelAccountBook(wx.Panel):
     
@@ -417,7 +494,7 @@ class PanelAccountBook(wx.Panel):
         wx.Panel.__init__(self, parent)
         self.__set_layout()
         self.__bind_events()
-        self.__on_search(None)
+        self.search()
 
     def __set_layout(self):
         today = datetime.date.today()
@@ -630,6 +707,21 @@ class PanelAccountBook(wx.Panel):
             return
         dlgp = wx.ProgressDialog('안내', '장부 기록을 검색 중입니다.')
         dlgp.Pulse()
+        self.search()
+        dlgp.Destroy()
+        wx.Yield()
+        wx.CallAfter(wx.GetTopLevelParent(self).Raise)
+
+    def search(self):
+        date1 = self.__dp_start.date
+        date2 = self.__dp_end.date
+        tran_types = []
+        if self.__ck_income.GetValue():
+            tran_types.append(TableAccountBook.TransactionType.INCOME)
+        if self.__ck_exp.GetValue():
+            tran_types.append(TableAccountBook.TransactionType.EXPENDITURE)
+        if self.__ck_fixed.GetValue():
+            tran_types.append(TableAccountBook.TransactionType.FIXED_ASSET)
         lc = self.__lc
         lc.Freeze()
         lc.DeleteAllItems()
@@ -637,8 +729,19 @@ class PanelAccountBook(wx.Panel):
         for i, tr in enumerate(trs):
             self.insert_transaction(i, tr)
         lc.Thaw()
-        dlgp.Destroy()
-        wx.GetTopLevelParent(self).Raise()
+
+    def delete_olds(self, older_than:datetime.date):
+        lc = self.__lc
+        lc.Freeze()
+        for i in list(range(lc.GetItemCount()))[::-1]:
+            year, month, day = lc.GetItemText(i, 1).split('/')
+            year = int(f'20{year}')
+            month = int(month)
+            day = int(day)
+            date = datetime.date(year, month, day)
+            if date < older_than:
+                lc.DeleteItem(i)
+        lc.Thaw()
 
     def insert_transaction(self, index:int, transaction:Transaction):
         lc = self.__lc
@@ -673,6 +776,8 @@ class FrameMain(wx.Frame):
         self.SetSize((1200, 800))
         self.SetMinSize(self.GetSize())
         self.CenterOnScreen()
+        wx.Yield()
+        wx.CallAfter(self.Raise)
 
     def __set_layout(self):
         pn_main = wx.Panel(self)
@@ -686,10 +791,15 @@ class FrameMain(wx.Frame):
         sz.Add(nb, 1, wx.EXPAND|wx.ALL, 15)
         pn_main.SetSizer(sz)
 
+        self.__pn_db = pn_db
+        self.__pn_ab = pn_ab
+
     def __set_menubar(self):
         menubar = wx.MenuBar()
         menu = wx.Menu()
         menubar.Append(menu, '메뉴')
+        self._mi_delete_olds = menu.Append(-1, '오래된 데이터 삭제')
+        self.Bind(wx.EVT_MENU, self.__on_delete_olds, self._mi_delete_olds)
         self._mi_license = menu.Append(-1, 'OSS 라이센스')
         self.Bind(wx.EVT_MENU, self.__on_license, self._mi_license)
         self._mi_print = menu.Append(-1, '도움말')
@@ -699,6 +809,20 @@ class FrameMain(wx.Frame):
         self.Bind(wx.EVT_MENU, self.__on_quit, self._mi_quit)
         self.SetMenuBar(menubar)
     
+    def __on_delete_olds(self, event):
+        dlg = DialogDeleteOlds(self)
+        res = dlg.ShowModal()
+        date = dlg.GetDate()
+        dlg.Destroy()
+        if res != wx.ID_OK:
+            return
+        dlgp = wx.ProgressDialog('안내', '오래된 데이터를 삭제 중입니다.')
+        dlgp.Pulse()
+        n_deleted = DB.delete_old_transactions(date)
+        self.__pn_ab.delete_olds(date)
+        dlgp.Destroy()
+        wx.MessageBox(f'{n_deleted:,} 건의 장부 기록을 삭제했습니다.', '안내', parent=self)
+
     def __on_license(self, event):
         dlg = DialogOSSL(self)
         dlg.ShowModal()

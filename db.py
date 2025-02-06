@@ -322,6 +322,34 @@ class DB(BaseDB):
         cls.CON.commit()
     
     @classmethod
+    def delete_old_transactions(cls, older_than:datetime.date) -> int:
+        """
+        Returns:
+            삭제된 레코드 수
+        """
+        table = TableAccountBook
+        attrs = table.Attributes
+        cls.CUR.execute(
+            f'SELECT {attrs.PK} FROM {table} WHERE {attrs.DATE}<?;',
+            (older_than,)
+        )
+        pks = [record[0] for record in cls.CUR.fetchall()]
+        placeholders = ', '.join(['?' for _ in range(len(pks))])
+        cls.CUR.execute(
+            f'SELECT {TableSupplementary.Attributes.PK} FROM {TableSupplementary} WHERE {TableSupplementary.Attributes.AB_PK} IN ({placeholders});',
+            pks
+        )
+        for record in cls.CUR.fetchall():
+            filepath = record[0]
+            FileManager.remove_file(filepath)
+        cls.CUR.execute(
+            f'DELETE FROM {table} WHERE {attrs.PK} IN ({placeholders});',
+            pks
+        )
+        cls.CON.commit()
+        return len(pks)
+
+    @classmethod
     def search_transaction(
             cls, 
             date_start: datetime.date, 
