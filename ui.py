@@ -3,6 +3,7 @@ import wx
 from app import APP_NAME, VERSION
 from db import DB, Transaction, Supplementary, TableSupplementary, TableAccountBook
 from widget import DatePicker, FileSelector, Deposit
+from filemanager import FileManager
 
 class DialogTransaction(wx.Dialog):
 
@@ -213,7 +214,7 @@ class PanelAccountBook(wx.Panel):
             (bt_search, (0, 1), (3, 1), wx.EXPAND)
         ))
 
-        bt_add  = wx.Button(self, label='추가')
+        bt_add  = wx.Button(self, label='작성')
         bt_del  = wx.Button(self, label='삭제')
         sz_bt = wx.BoxSizer(wx.HORIZONTAL)
         sz_bt.AddMany((
@@ -280,6 +281,20 @@ class PanelAccountBook(wx.Panel):
             return
         new_tr = DB.insert_transaction(tr)
         self.insert_transaction(0, new_tr)
+
+        files_to_remove = []
+        for supp_type in TableSupplementary.SupplementaryType:
+            supp = tr.get_supplementary(supp_type)
+            if supp.filepath is not None:
+                files_to_remove.append(supp.filepath)
+        if files_to_remove:
+            dlg = wx.MessageDialog(self, '견적서/거래명세서/적격증빙 원본 파일을 삭제할까요?', '안내', style=wx.YES_NO|wx.NO_DEFAULT)
+            res = dlg.ShowModal()
+            dlg.Destroy()
+            if res == wx.ID_YES:
+                for filepath in files_to_remove:
+                    FileManager.remove_file(filepath)
+
         wx.MessageBox('장부를 작성했습니다.', '안내', parent=self)
 
     def __on_del(self, event):
@@ -313,10 +328,22 @@ class PanelAccountBook(wx.Panel):
         dlg.Destroy()
         if res != wx.ID_OK:
             return
-        DB.update_transaction(tr)
+        files_to_remove = []
         for supp_type in TableSupplementary.SupplementaryType:
-            DB.update_supplementary(tr.get_supplementary(supp_type).pk, tr.get_supplementary(supp_type).filepath)
+            supp = tr.get_supplementary(supp_type)
+            if supp.filepath is not None \
+                and supp.filepath[1] == ':':
+                files_to_remove.append(supp.filepath)
+            DB.update_supplementary(supp.pk, supp.filepath)
+        DB.update_transaction(tr)
         self.set_transaction(idx, tr)
+        if files_to_remove:
+            dlg = wx.MessageDialog(self, '견적서/거래명세서/적격증빙 원본 파일을 삭제할까요?', '안내', style=wx.YES_NO|wx.NO_DEFAULT)
+            res = dlg.ShowModal()
+            dlg.Destroy()
+            if res == wx.ID_YES:
+                for filepath in files_to_remove:
+                    FileManager.remove_file(filepath)
         wx.MessageBox('장부를 수정했습니다.', '안내', parent=self)
 
     def __on_week (self, event):
@@ -340,6 +367,9 @@ class PanelAccountBook(wx.Panel):
     def __on_search(self, event):
         date1 = self.__dp_start.date
         date2 = self.__dp_end.date
+        if date1 > date2:
+            wx.MessageBox('검색 기간의 시작일자가 종료일자보다 늦습니다.', '안내', parent=self)
+            return
         tran_types = []
         if self.__ck_income.GetValue():
             tran_types.append(TableAccountBook.TransactionType.INCOME)

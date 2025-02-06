@@ -3,6 +3,7 @@ import wx
 import wx.adv
 import wx.lib.newevent
 import datetime
+from filemanager import FileManager
 
 class DatePicker(wx.Panel):
     
@@ -159,7 +160,10 @@ class FileSelector(wx.Window):
         if self.__filepath is None:
             wx.MessageBox('선택된 파일이 없습니다.', '안내', parent=self)
         else:
-            os.startfile(self.__filepath)
+            if self.__filepath[1] == ':':
+                os.startfile(self.__filepath)
+            else:
+                os.startfile(os.path.join(FileManager.ROOT_DIR, self.__filepath))
 
     def __on_edit(self, event):
         dlg = wx.FileDialog(None, f'{self.__filetype} 파일을 선택하세요.', wildcard=f'{self.__filetype} 파일 (*.pdf;*.xlsx)|*.pdf;*.xlsx', style=wx.FD_FILE_MUST_EXIST|wx.FD_OPEN)

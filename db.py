@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import os
 import datetime
+from copy import deepcopy
 from enum import IntEnum
 from dbmanager import BaseTable, BaseDB, Attribute, AttrType, ForeignKey, ForeignKeyOption
+from filemanager import FileManager
 
 class TableAccountBook(BaseTable):
 
@@ -125,6 +128,12 @@ class Transaction:
             return ''
         else:
             return self.__deposit.strftime('%Y/%m/%d')[2:]
+        
+    @property
+    def clean_account(self):
+        """파일명에 사용할 수 없는 특수문자들과 공백을 제거한 거래처명"""
+        # TODO
+        return self.__account.replace(' ', '')
 
     def set_pk(self, value):
         self.__pk = value
@@ -158,6 +167,25 @@ class Transaction:
 
     def set_supplementary(self, supplementary:Supplementary):
         self.__supplementaries[supplementary.supplementary_type] = supplementary
+
+    def get_supplementary_file_path(self, supplementary_type:TableSupplementary.SupplementaryType) -> str:
+        tran_type = {
+            0: '수입',
+            1: '지출',
+            2: '자산'
+        }.get(self.transaction_type, self.transaction_type)
+        supp_type = {
+            0: '견적서',
+            1: '거래명세서',
+            2: '적격증빙'
+        }.get(supplementary_type, supplementary_type)
+        date = self.date
+        year = date.year
+        month = date.month
+        day = date.day
+        file_name = f'{str(year)[-2:]}{month:>02}{day:>02}_{tran_type}_{self.clean_account}_{supp_type}'
+        file_path = os.path.join(str(year), f'{month:>02}', file_name)
+        return file_path
 
 class Supplementary:
 
@@ -213,6 +241,7 @@ class DB(BaseDB):
         supplementary의 pk는 무시하고 새 pk로 업데이트함
         """
         tr = transaction
+        new_tr = deepcopy(tr)
         table = TableAccountBook
         attrs = table.Attributes
         cls.CUR.execute(
@@ -227,21 +256,27 @@ class DB(BaseDB):
         )
         cls.CON.commit()
         pk = cls.CUR.lastrowid
-        tr.set_pk(pk)
+        new_tr.set_pk(pk)
         table = TableSupplementary
         attrs = table.Attributes
         for supp_type in table.SupplementaryType:
-            filepath = tr.get_supplementary(supp_type).filepath
+            filepath = new_tr.get_supplementary(supp_type).filepath
+            if filepath is None:
+                new_filepath = None
+            else:
+                ext = os.path.splitext(filepath)[-1]
+                new_filepath = f'{new_tr.get_supplementary_file_path(supp_type)}{ext}'
+                FileManager.move_file(filepath, new_filepath)
             cls.CUR.execute(
                 f'INSERT INTO {table} (' \
                 f'{attrs.AB_PK}, {attrs.TYPE}, {attrs.PATH}' \
                 ') VALUES (?, ?, ?)',
-                (pk, supp_type, filepath)
+                (pk, supp_type, new_filepath)
             )
-            supp = Supplementary(cls.CUR.lastrowid, supp_type, filepath)
-            tr.set_supplementary(supp)
+            supp = Supplementary(cls.CUR.lastrowid, supp_type, new_filepath)
+            new_tr.set_supplementary(supp)
         cls.CON.commit()
-        return tr
+        return new_tr
     
     @classmethod
     def update_transaction(cls, transaction:Transaction):
@@ -266,12 +301,23 @@ class DB(BaseDB):
     def delete_transactions(cls, pks:list|int):
         if isinstance(pks, int):
             pks = [pks,]
+        pks = tuple(pks)
         placeholders = ', '.join(['?' for _ in range(len(pks))])
+        table = TableSupplementary
+        attrs = table.Attributes
+        cls.CUR.execute(
+            f'SELECT {attrs.PATH} FROM {table} WHERE {attrs.AB_PK} IN ({placeholders}) AND {attrs.PATH} IS NOT NULL;',
+            pks
+        )
+        for record in cls.CUR.fetchall():
+            filepath = record[0]
+            FileManager.remove_file(filepath)
+
         table = TableAccountBook
         attrs = table.Attributes
         cls.CUR.execute(
             f'DELETE FROM {table} WHERE {attrs.PK} IN ({placeholders});',
-            tuple(pks)
+            pks
         )
         cls.CON.commit()
     
@@ -328,12 +374,27 @@ class DB(BaseDB):
         return supplementaries
 
     @classmethod
-    def update_supplementary(cls, pk:int, file_path:str|None):
+    def update_supplementary(cls, pk:int, filepath:str|None):
         table = TableSupplementary
         attrs = table.Attributes
+        if filepath is None:
+            cls.CUR.execute(f'SELECT {attrs.PATH} FROM {table} WHERE {attrs.PK}=?;', (pk,))
+            old_file_path = cls.CUR.fetchone()[0]
+            if old_file_path is not None:
+                FileManager.remove_file(old_file_path)
+            new_filepath = None
+        else:
+            cls.CUR.execute(f'SELECT {attrs.AB_PK}, {attrs.TYPE} FROM {table} WHERE {attrs.PK}=?;', (pk,))
+            ab_pk, supp_type = cls.CUR.fetchone()
+            tr = cls.get_transaction(ab_pk)
+            ext = os.path.splitext(filepath)[-1]
+            new_filepath = f'{tr.get_supplementary_file_path(supp_type)}{ext}'
+            if filepath == new_filepath:
+                return
+            FileManager.move_file(filepath, new_filepath)
         cls.CUR.execute(
             f'UPDATE {table} SET {attrs.PATH}=? WHERE {attrs.PK}=?;',
-            (file_path, pk)
+            (new_filepath, pk)
         )
         cls.CON.commit()
 
