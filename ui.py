@@ -3,10 +3,12 @@ import wx
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
-from app import APP_NAME, VERSION
+from app import APP_NAME
 from db import DB, Transaction, Supplementary, TableSupplementary, TableAccountBook
 from widget import DatePicker, FileSelector, Deposit
 from filemanager import FileManager
+from ossl import DialogOSSL
+from info import DialogHelp
 
 class DialogTransaction(wx.Dialog):
 
@@ -664,8 +666,9 @@ class PanelAccountBook(wx.Panel):
 class FrameMain(wx.Frame):
 
     def __init__(self):
-        wx.Frame.__init__(self, None, title=f'{APP_NAME} ({VERSION})')
+        wx.Frame.__init__(self, None, title=APP_NAME)
         self.__set_layout()
+        self.__set_menubar()
 
         self.SetSize((1200, 800))
         self.SetMinSize(self.GetSize())
@@ -683,4 +686,28 @@ class FrameMain(wx.Frame):
         sz.Add(nb, 1, wx.EXPAND|wx.ALL, 15)
         pn_main.SetSizer(sz)
 
+    def __set_menubar(self):
+        menubar = wx.MenuBar()
+        menu = wx.Menu()
+        menubar.Append(menu, '메뉴')
+        self._mi_license = menu.Append(-1, 'OSS 라이센스')
+        self.Bind(wx.EVT_MENU, self.__on_license, self._mi_license)
+        self._mi_print = menu.Append(-1, '도움말')
+        self.Bind(wx.EVT_MENU, self.__on_help, self._mi_print)
+        menu.AppendSeparator()
+        self._mi_quit = menu.Append(-1, '종료')
+        self.Bind(wx.EVT_MENU, self.__on_quit, self._mi_quit)
+        self.SetMenuBar(menubar)
     
+    def __on_license(self, event):
+        dlg = DialogOSSL(self)
+        dlg.ShowModal()
+        dlg.Destroy()
+
+    def __on_help(self, event):
+        dlg = DialogHelp(self)
+        dlg.ShowModal()
+        dlg.Destroy()
+
+    def __on_quit(self, event):
+        self.Destroy()
