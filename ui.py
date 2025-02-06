@@ -279,8 +279,7 @@ class PanelAccountBook(wx.Panel):
         dlg.Destroy()
         if res != wx.ID_OK:
             return
-        new_tr = DB.insert_transaction(tr)
-        self.insert_transaction(0, new_tr)
+        DB.insert_transaction(tr)
 
         files_to_remove = []
         for supp_type in TableSupplementary.SupplementaryType:
@@ -295,6 +294,7 @@ class PanelAccountBook(wx.Panel):
                 for filepath in files_to_remove:
                     FileManager.remove_file(filepath)
 
+        self.__on_search(None)
         wx.MessageBox('장부를 작성했습니다.', '안내', parent=self)
 
     def __on_del(self, event):
