@@ -772,6 +772,7 @@ class FrameMain(wx.Frame):
         wx.Frame.__init__(self, None, title=APP_NAME)
         self.__set_layout()
         self.__set_menubar()
+        self.__bind_events()
 
         self.SetSize((1200, 800))
         self.SetMinSize(self.GetSize())
@@ -809,6 +810,9 @@ class FrameMain(wx.Frame):
         self.Bind(wx.EVT_MENU, self.__on_quit, self._mi_quit)
         self.SetMenuBar(menubar)
     
+    def __bind_events(self):
+        self.Bind(wx.EVT_WINDOW_DESTROY, self.__on_destroy)
+
     def __on_delete_olds(self, event):
         dlg = DialogDeleteOlds(self)
         res = dlg.ShowModal()
@@ -835,3 +839,7 @@ class FrameMain(wx.Frame):
 
     def __on_quit(self, event):
         self.Destroy()
+
+    def __on_destroy(self, event):
+        DB.CUR.execute('VACUUM;')
+        event.Skip()
