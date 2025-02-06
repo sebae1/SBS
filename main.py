@@ -1,10 +1,12 @@
 import os
 import traceback
 import wx
+import matplotlib.pyplot as plt
 from ui import FrameMain
 from db import DB
 
 def main():
+    plt.rcParams['font.family'] = 'Malgun Gothic'
     app = wx.App()
     try:
         if not os.path.isfile(DB.DB_FILE_PATH):

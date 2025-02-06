@@ -1,5 +1,8 @@
 import datetime
 import wx
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
 from app import APP_NAME, VERSION
 from db import DB, Transaction, Supplementary, TableSupplementary, TableAccountBook
 from widget import DatePicker, FileSelector, Deposit
@@ -151,17 +154,260 @@ class DialogTransaction(wx.Dialog):
         return self.__tr
 
 class PanelDashboard(wx.Panel):
+
+    COLOR_INCOME = '#00B050'
+    COLOR_EXPENDITURE = '#C00000'
+    COLOR_FIXED_ASSET = '#E97132'
     
     def __init__(self, parent: wx.Window):
         wx.Panel.__init__(self, parent)
         self.__set_layout()
         self.__bind_events()
+        self.__on_something_changed(None)
 
     def __set_layout(self):
-        return
+        # ///////////////////////////////////////////////////////////
+        # 좌측의 컨트롤 패널
+        pn_control = wx.Panel(self, style=wx.BORDER_SIMPLE)
+        
+        today = datetime.date.today()
+        sb_year = wx.StaticBox(pn_control, label='연도')
+        rb_recent_year = wx.RadioButton(sb_year, label='최근 1 년', style=wx.RB_GROUP)
+        rb_every_year = wx.RadioButton(sb_year, label='연도별')
+        sc_every_year = wx.SpinCtrl(sb_year, value=str(today.year), initial=today.year, min=2020, max=2100)
+        sz_year = wx.GridBagSizer(5, 5)
+        sz_year.AddMany((
+            (rb_recent_year, (0, 0), (1, 2), wx.ALIGN_CENTER_VERTICAL),
+            (rb_every_year, (1, 0), (1, 1), wx.ALIGN_CENTER_VERTICAL),
+            (sc_every_year, (1, 1), (1, 1), wx.ALIGN_CENTER_VERTICAL)
+        ))
+        sz_sb_year = wx.StaticBoxSizer(sb_year)
+        sz_sb_year.Add(sz_year, 1, wx.EXPAND|wx.ALL, 10)
+
+        sb_income = wx.StaticBox(pn_control, label='수입')
+        rb_tran_date = wx.RadioButton(sb_income, label='장부일자기준', style=wx.RB_GROUP)
+        rb_deposit_date = wx.RadioButton(sb_income, label='입금일자기준')
+        rb_deposit_date.SetToolTip('미입금건은 표시되지 않음.')
+        sz_income = wx.BoxSizer(wx.VERTICAL)
+        sz_income.AddMany((
+            (rb_tran_date, 0), ((-1, 5), 0),
+            (rb_deposit_date, 0)
+        ))
+        sz_sb_income = wx.StaticBoxSizer(sb_income)
+        sz_sb_income.Add(sz_income, 1, wx.EXPAND|wx.ALL, 10)
+
+        sz_control_vert = wx.BoxSizer(wx.VERTICAL)
+        sz_control_vert.AddMany((
+            (sz_sb_year, 0, wx.EXPAND), ((-1, 10), 0),
+            (sz_sb_income, 0, wx.EXPAND), ((-1, 10), 1)
+        ))
+        sz_control = wx.BoxSizer(wx.HORIZONTAL)
+        sz_control.Add(sz_control_vert, 1, wx.EXPAND|wx.ALL, 10)
+        pn_control.SetSizerAndFit(sz_control)
+
+        # ///////////////////////////////////////////////////////////
+        # 우측의 표시 패널
+        pn_board = wx.Panel(self)
+
+        font = self.GetFont()
+        font.SetPointSize(20)
+        bold = font.Bold()
+        st_income_label      = wx.StaticText(pn_board, size=(250, -1), style=wx.ALIGN_CENTRE_HORIZONTAL, label='수입')
+        st_expenditure_label = wx.StaticText(pn_board, size=(250, -1), style=wx.ALIGN_CENTRE_HORIZONTAL, label='지출')
+        st_fixed_asset_label = wx.StaticText(pn_board, size=(250, -1), style=wx.ALIGN_CENTRE_HORIZONTAL, label='고정자산')
+        st_income_sv         = wx.StaticText(pn_board, size=(250, -1), style=wx.ALIGN_CENTRE_HORIZONTAL, label='0')
+        st_expenditure_sv    = wx.StaticText(pn_board, size=(250, -1), style=wx.ALIGN_CENTRE_HORIZONTAL, label='0')
+        st_fixed_asset_sv    = wx.StaticText(pn_board, size=(250, -1), style=wx.ALIGN_CENTRE_HORIZONTAL, label='0')
+        st_income_vat        = wx.StaticText(pn_board, size=(250, -1), style=wx.ALIGN_CENTRE_HORIZONTAL, label='0')
+        st_expenditure_vat   = wx.StaticText(pn_board, size=(250, -1), style=wx.ALIGN_CENTRE_HORIZONTAL, label='0')
+        st_fixed_asset_vat   = wx.StaticText(pn_board, size=(250, -1), style=wx.ALIGN_CENTRE_HORIZONTAL, label='0')
+        st_supply_value      = wx.StaticText(pn_board, style=wx.ALIGN_CENTRE_HORIZONTAL, label='금액')
+        st_vat               = wx.StaticText(pn_board, style=wx.ALIGN_CENTRE_HORIZONTAL, label='부가세')
+        st_income_label     .SetFont(bold)
+        st_expenditure_label.SetFont(bold)
+        st_fixed_asset_label.SetFont(bold)
+        st_income_sv        .SetFont(bold)
+        st_expenditure_sv   .SetFont(bold)
+        st_fixed_asset_sv   .SetFont(bold)
+        st_income_vat       .SetFont(bold)
+        st_expenditure_vat  .SetFont(bold)
+        st_fixed_asset_vat  .SetFont(bold)
+        st_supply_value     .SetFont(bold)
+        st_vat              .SetFont(bold)
+        st_income_sv        .SetForegroundColour(wx.Colour(__class__.COLOR_INCOME     ))
+        st_expenditure_sv   .SetForegroundColour(wx.Colour(__class__.COLOR_EXPENDITURE))
+        st_fixed_asset_sv   .SetForegroundColour(wx.Colour(__class__.COLOR_FIXED_ASSET))
+        st_income_vat       .SetForegroundColour(wx.Colour(__class__.COLOR_INCOME     ))
+        st_expenditure_vat  .SetForegroundColour(wx.Colour(__class__.COLOR_EXPENDITURE))
+        st_fixed_asset_vat  .SetForegroundColour(wx.Colour(__class__.COLOR_FIXED_ASSET))
+
+        sz_grid_value = wx.FlexGridSizer(3, 4, 10, 10)
+        sz_grid_value.AddGrowableCol(0)
+        sz_grid_value.AddMany((
+            ((-1, -1), 0), (st_income_label, 0, wx.ALIGN_CENTER), (st_expenditure_label, 0, wx.ALIGN_CENTER), (st_fixed_asset_label, 0, wx.ALIGN_CENTER),
+            (st_supply_value, 0, wx.ALIGN_CENTER), (st_income_sv, 0, wx.ALIGN_CENTER), (st_expenditure_sv, 0, wx.ALIGN_CENTER), (st_fixed_asset_sv, 0, wx.ALIGN_CENTER),
+            (st_vat, 0, wx.ALIGN_CENTER), (st_income_vat, 0, wx.ALIGN_CENTER), (st_expenditure_vat, 0, wx.ALIGN_CENTER), (st_fixed_asset_vat, 0, wx.ALIGN_CENTER)
+        ))
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        cv = FigureCanvas(pn_board, -1, fig)
+
+        sz_vert = wx.BoxSizer(wx.VERTICAL)
+        sz_vert.AddMany((
+            (sz_grid_value, 0, wx.ALIGN_CENTER_HORIZONTAL), ((-1, 10), 0),
+            (cv, 1, wx.EXPAND)
+        ))
+        pn_board.SetSizer(sz_vert)
+
+        # ///////////////////////////////////////////////////////////
+        # 전체 레이아웃
+        sz_horz = wx.BoxSizer(wx.HORIZONTAL)
+        sz_horz.AddMany((
+            (pn_control, 0, wx.EXPAND), ((10, -1), 0),
+            (pn_board, 1, wx.EXPAND)
+        ))
+        sz = wx.BoxSizer(wx.HORIZONTAL)
+        sz.Add(sz_horz, 1, wx.EXPAND|wx.ALL, 10)
+        self.SetSizer(sz)
+
+        self.__rb_recent_year  = rb_recent_year 
+        self.__rb_every_year   = rb_every_year  
+        self.__sc_every_year   = sc_every_year  
+        self.__rb_tran_date    = rb_tran_date   
+        self.__rb_deposit_date = rb_deposit_date
+        self.__st_income_sv       = st_income_sv      
+        self.__st_expenditure_sv  = st_expenditure_sv 
+        self.__st_fixed_asset_sv  = st_fixed_asset_sv 
+        self.__st_income_vat      = st_income_vat     
+        self.__st_expenditure_vat = st_expenditure_vat
+        self.__st_fixed_asset_vat = st_fixed_asset_vat
+        self.__fig = fig
+        self.__ax  = ax 
+        self.__cv  = cv 
+        self.__annotation = None
+        self.__bars = []
     
     def __bind_events(self):
-        return
+        self.__rb_recent_year .Bind(wx.EVT_RADIOBUTTON, self.__on_something_changed)
+        self.__rb_every_year  .Bind(wx.EVT_RADIOBUTTON, self.__on_something_changed)
+        self.__sc_every_year  .Bind(wx.EVT_SPINCTRL   , self.__on_something_changed)
+        self.__rb_tran_date   .Bind(wx.EVT_RADIOBUTTON, self.__on_something_changed)
+        self.__rb_deposit_date.Bind(wx.EVT_RADIOBUTTON, self.__on_something_changed)
+        self.Bind(wx.EVT_WINDOW_DESTROY, self.__on_destroy)
+        self.__cv.mpl_connect('motion_notify_event', self.__on_hover_canvas)
+
+    def __on_destroy(self, event):
+        plt.close(self.__fig)
+        event.Skip()
+
+    def __on_something_changed(self, event):
+        dlgp = wx.ProgressDialog('안내', '데이터를 수집 중입니다.')
+        dlgp.Pulse()
+        self.__sc_every_year.Enable(self.__rb_every_year.GetValue())
+        if self.__rb_recent_year.GetValue():
+            today = datetime.date.today()
+            year = today.year
+            month = today.month+1
+            if month == 13:
+                year += 1
+                month = 1
+            date2 = datetime.date(year, month, 1)
+            date1 = date2.replace(year=year-1)
+            date2 -= datetime.timedelta(days=1)
+        else:
+            year = self.__sc_every_year.GetValue()
+            date1 = datetime.date(year, 1, 1)
+            date2 = datetime.date(year, 12, 31)
+        months = [(date1.month+i-1)%12+1 for i in range(12)]
+        bar_graph_data = {
+            '수입': [0 for _ in range(12)],
+            '지출': [0 for _ in range(12)],
+            '고정자산': [0 for _ in range(12)]
+        }
+        bar_colors = {
+            '수입'    : __class__.COLOR_INCOME     ,
+            '지출'    : __class__.COLOR_EXPENDITURE,
+            '고정자산': __class__.COLOR_FIXED_ASSET
+        }
+        tran_types = [tt for tt in TableAccountBook.TransactionType]
+        trs = DB.search_transaction(date1, date2, tran_types)
+        svs = {tt:0 for tt in TableAccountBook.TransactionType}
+        vats = {tt:0 for tt in TableAccountBook.TransactionType}
+        flag_deposit = self.__rb_deposit_date.GetValue()
+        for tr in trs:
+            if tr.transaction_type == TableAccountBook.TransactionType.INCOME \
+                and flag_deposit \
+                and tr.deposit is None:
+                    continue
+            month_index = months.index(tr.date.month)
+            if tr.transaction_type == TableAccountBook.TransactionType.INCOME:
+                bar_graph_data['수입'][month_index] += tr.supply_value
+            elif tr.transaction_type == TableAccountBook.TransactionType.EXPENDITURE:
+                bar_graph_data['지출'][month_index] += tr.supply_value
+            elif tr.transaction_type == TableAccountBook.TransactionType.FIXED_ASSET:
+                bar_graph_data['고정자산'][month_index] += tr.supply_value
+            svs[tr.transaction_type] += tr.supply_value
+            vats[tr.transaction_type] += tr.vat
+        self.__st_income_sv      .SetLabel(f'{svs[TableAccountBook.TransactionType.INCOME]:,}'     )
+        self.__st_expenditure_sv .SetLabel(f'{svs[TableAccountBook.TransactionType.EXPENDITURE]:,}')
+        self.__st_fixed_asset_sv .SetLabel(f'{svs[TableAccountBook.TransactionType.FIXED_ASSET]:,}')
+        self.__st_income_vat     .SetLabel(f'{vats[TableAccountBook.TransactionType.INCOME]:,}'     )
+        self.__st_expenditure_vat.SetLabel(f'{vats[TableAccountBook.TransactionType.EXPENDITURE]:,}')
+        self.__st_fixed_asset_vat.SetLabel(f'{vats[TableAccountBook.TransactionType.FIXED_ASSET]:,}')
+        self.__ax.clear()
+        self.__ax.set_title('금액')
+        x = np.arange(12) 
+        width = 0.25
+        multiplier = 0
+        self.__bars.clear()
+        for label, values in bar_graph_data.items():
+            offset = width * multiplier
+            self.__bars.extend(
+                self.__ax.bar(
+                    x+offset, 
+                    values, 
+                    width, 
+                    label=label, 
+                    color=bar_colors[label]
+                )
+            )
+            multiplier += 1
+        self.__annotation = self.__ax.annotate(
+            '', 
+            xy = (0, 0), 
+            xytext = (0, 10), 
+            textcoords ='offset points',
+            ha = 'center',  
+            va = 'bottom',
+            bbox = dict(boxstyle='round,pad=0.3', fc='yellow', alpha=0.8),
+            arrowprops = dict(arrowstyle='->', color='black')
+        )
+        self.__annotation.set_visible(False)
+        self.__ax.tick_params(axis='both', which='both', labelleft=False, bottom=False, left=False)
+        self.__ax.set_xticks(x+width, [f'{m}월' for m in months])
+        self.__ax.legend(loc='lower left', ncols=3, bbox_to_anchor=(0, 1))
+        self.__fig.tight_layout()
+        self.__cv.draw()
+        dlgp.Destroy()
+
+    def __on_hover_canvas(self, event):
+        if self.__annotation is None:
+            return
+        vis = self.__annotation.get_visible()
+        if event.inaxes == self.__ax:
+            for bar in self.__bars:
+                contains, _ = bar.contains(event)
+                if contains:
+                    value = bar.get_height()
+                    self.__annotation.xy = (bar.get_x() + bar.get_width()/2, value)
+                    self.__annotation.set_text(f'{value:,} 원')
+                    self.__annotation.set_visible(True)
+                    self.__cv.draw_idle()
+                    return
+        if vis:
+            self.__annotation.set_visible(False)
+            self.__cv.draw_idle()
 
 class PanelAccountBook(wx.Panel):
     
@@ -421,7 +667,7 @@ class FrameMain(wx.Frame):
         wx.Frame.__init__(self, None, title=f'{APP_NAME} ({VERSION})')
         self.__set_layout()
 
-        self.SetSize((700, 500))
+        self.SetSize((1200, 800))
         self.SetMinSize(self.GetSize())
         self.CenterOnScreen()
 
