@@ -21,7 +21,12 @@ class FileManager(metaclass=_ReadOnlyMeta):
         save_dir = os.path.join(cls.ROOT_DIR, os.path.split(new_file_path)[0])
         os.makedirs(save_dir, exist_ok=True)
         new_file_path = os.path.join(cls.ROOT_DIR, new_file_path)
-        shutil.copy(original_file_path, new_file_path)
+        if original_file_path[1] != ':':
+            original_file_path = os.path.join(cls.ROOT_DIR, original_file_path)
+            shutil.copy(original_file_path, new_file_path)
+            cls.remove_file(original_file_path)
+        else:
+            shutil.copy(original_file_path, new_file_path)
     
     @classmethod
     def remove_file(cls, file_path:str):

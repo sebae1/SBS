@@ -412,12 +412,12 @@ class DB(BaseDB):
                 FileManager.remove_file(old_file_path)
             new_filepath = None
         else:
-            cls.CUR.execute(f'SELECT {attrs.AB_PK}, {attrs.TYPE} FROM {table} WHERE {attrs.PK}=?;', (pk,))
-            ab_pk, supp_type = cls.CUR.fetchone()
+            cls.CUR.execute(f'SELECT {attrs.AB_PK}, {attrs.TYPE}, {attrs.PATH} FROM {table} WHERE {attrs.PK}=?;', (pk,))
+            ab_pk, supp_type, old_file_path = cls.CUR.fetchone()
             tr = cls.get_transaction(ab_pk)
             ext = os.path.splitext(filepath)[-1]
             new_filepath = f'{tr.get_supplementary_file_path(supp_type)}{ext}'
-            if filepath == new_filepath:
+            if new_filepath == old_file_path:
                 return
             FileManager.move_file(filepath, new_filepath)
         cls.CUR.execute(
