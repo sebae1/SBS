@@ -1,9 +1,11 @@
 import datetime
 import traceback
+import base64
 import wx
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as FigureCanvas
+from io import BytesIO
 from app import APP_NAME
 from db import DB, Transaction, Supplementary, TableSupplementary, TableAccountBook
 from widget import DatePicker, FileSelector, Deposit
@@ -11,6 +13,7 @@ from filemanager import FileManager
 from ossl import DialogOSSL
 from info import DialogHelp
 from excel import Record, save_records_as_excel
+from icon import ICON
 
 class DialogTransaction(wx.Dialog):
 
@@ -814,6 +817,13 @@ class FrameMain(wx.Frame):
 
     def __init__(self):
         wx.Frame.__init__(self, None, title=APP_NAME)
+
+        icon = base64.b64decode(ICON.encode('ascii'))
+        b = BytesIO(icon)
+        img = wx.Image(b, type=wx.BITMAP_TYPE_ICO)
+        icon = wx.Icon(wx.Bitmap(img))
+        self.SetIcon(icon)
+
         self.__set_layout()
         self.__set_menubar()
         self.__bind_events()
